@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Basic Solar System</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #000; overflow: hidden; }
+    #c { display: block; width: 100vw; height: 100vh; }
+    .hud {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      pointer-events: none;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      color: rgba(255,255,255,.88);
+      font-size: 12px;
+      text-shadow: 0 1px 8px rgba(0,0,0,.6);
+      z-index: 5;
+    }
+    .pill {
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.12);
+      backdrop-filter: blur(8px);
+    }
+    #msg {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      z-index: 10;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      color: rgba(255,255,255,.92);
+      background: rgba(0,0,0,.85);
+    }
+    #msg .box {
+      max-width: 820px;
+      width: 100%;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      padding: 16px 16px 14px;
+    }
+    #msg .title { font-size: 14px; font-weight: 700; margin: 0 0 8px; }
+    #msg pre {
+      margin: 10px 0 0;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.35);
+      overflow: auto;
+      font-size: 12px;
+      color: rgba(255,255,255,.9);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div class="hud">
+    <div class="pill">Drag: orbit • Wheel: zoom • Right-drag: pan</div>
+    <div class="pill">Textures: Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune</div>
+  </div>
+
+  <div id="msg">
+    <div class="box">
+      <div class="title" id="msgTitle"></div>
+      <div id="msgBody"></div>
+      <pre id="msgPre"></pre>
+    </div>
+  </div>
+
+  <canvas id="c"></canvas>
+
+  <script type="module">
+    const msg = document.getElementById("msg");
+    const msgTitle = document.getElementById("msgTitle");
+    const msgBody = document.getElementById("msgBody");
+    const msgPre = document.getElementById("msgPre");
+
+    function showMessage(title, body, details = "") {
+      msgTitle.textContent = title;
+      msgBody.textContent = body;
+      msgPre.textContent = details || "";
+      msg.style.display = "flex";
+    }
+
+    if (location.protocol === "file:") {
+      showMessage(
+        "Nothing showing? This is almost always the file:// WebGL security block.",
+        "Open this page through a local web server so the JPG textures can load into WebGL.",
+        "Windows (in the folder with the HTML + JPGs):\n\n  python -m http.server 8000\n\nThen open:\n\n  http://localhost:8000/index-build-51.html\n\nIf 'python' isn't recognized, try:\n\n  py -m http.server 8000"
+      );
+    }
+
+    try {
+      const THREE = await import("https://unpkg.com/three@0.160.1/build/three.module.js");
+      const { OrbitControls } = await import("https://unpkg.com/three@0.160.1/examples/jsm/controls/OrbitControls.js");
+
+      const canvas = document.getElementById("c");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight, false);
+
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x000000, 0.02);
+
+      const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 500);
+      camera.position.set(0, 18, 44);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.minDistance = 8;
+      controls.maxDistance = 180;
+
+      const starGeo = new THREE.BufferGeometry();
+      const starCount = 2500;
+      const starPos = new Float32Array(starCount * 3);
+      for (let i = 0; i < starCount; i++) {
+        const r = 240 * Math.random() + 60;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(THREE.MathUtils.randFloatSpread(2));
+        const x = r * Math.sin(phi) * Math.cos(theta);
+        const y = r * Math.cos(phi);
+        const z = r * Math.sin(phi) * Math.sin(theta);
+        starPos[i * 3 + 0] = x;
+        starPos[i * 3 + 1] = y;
+        starPos[i * 3 + 2] = z;
+      }
+      starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+      const stars = new THREE.Points(
+        starGeo,
+        new THREE.PointsMaterial({ color: 0xffffff, size: 0.6, sizeAttenuation: true, transparent: true, opacity: 0.9 })
+      );
+      scene.add(stars);
+
+      const loader = new THREE.TextureLoader();
+      const sphereGeo = new THREE.SphereGeometry(1, 96, 64);
+
+      const system = new THREE.Group();
+      scene.add(system);
+
+      const sunRadius = 3.8;
+      const sunMat = new THREE.MeshBasicMaterial({ color: 0xffcc66 });
+      const sun = new THREE.Mesh(new THREE.SphereGeometry(sunRadius, 128, 96), sunMat);
+      system.add(sun);
+
+      const sunGlow = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: (() => {
+            const size = 256;
+            const c = document.createElement("canvas");
+            c.width = c.height = size;
+            const g = c.getContext("2d");
+            const grd = g.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+            grd.addColorStop(0.0, "rgba(255,220,140,0.90)");
+            grd.addColorStop(0.35, "rgba(255,170,80,0.40)");
+            grd.addColorStop(1.0, "rgba(255,140,40,0.00)");
+            g.fillStyle = grd;
+            g.fillRect(0, 0, size, size);
+            const tex = new THREE.CanvasTexture(c);
+            tex.colorSpace = THREE.SRGBColorSpace;
+            return tex;
+          })(),
+          transparent: true,
+          depthWrite: false
+        })
+      );
+      sunGlow.scale.set(18, 18, 1);
+      system.add(sunGlow);
+
+      const light = new THREE.PointLight(0xffffff, 2.2, 300);
+      light.position.set(0, 0, 0);
+      system.add(light);
+
+      const ambient = new THREE.AmbientLight(0xffffff, 0.12);
+      scene.add(ambient);
+
+      function ring(distance) {
+        const geo = new THREE.RingGeometry(distance - 0.02, distance + 0.02, 256);
+        const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.12, side: THREE.DoubleSide });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.rotation.x = Math.PI / 2;
+        system.add(mesh);
+        return mesh;
+      }
+
+      function loadTexture(url) {
+        return new Promise((resolve, reject) => {
+          loader.load(
+            url,
+            (tex) => resolve(tex),
+            undefined,
+            (err) => reject(new Error("Failed to load: " + url))
+          );
+        });
+      }
+
+      async function makePlanet({ name, texture, radius, distance, orbitSpeed, rotationSpeed, tilt = 0 }) {
+        const pivot = new THREE.Group();
+        system.add(pivot);
+
+        const tex = await loadTexture(texture);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = 8;
+
+        const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 1.0, metalness: 0.0 });
+        const mesh = new THREE.Mesh(sphereGeo, mat);
+        mesh.scale.set(radius, radius, radius);
+        mesh.position.x = distance;
+        mesh.rotation.z = THREE.MathUtils.degToRad(tilt);
+
+        pivot.add(mesh);
+        ring(distance);
+
+        return { name, pivot, mesh, orbitSpeed, rotationSpeed };
+      }
+
+      const defs = [
+        { name: "Mercury", texture: "Mercury.jpg", radius: 0.55, distance: 7.2, orbitSpeed: 0.030, rotationSpeed: 0.012 },
+        { name: "Venus", texture: "Venus.jpg", radius: 0.95, distance: 10.2, orbitSpeed: 0.022, rotationSpeed: 0.008 },
+        { name: "Earth", texture: "Earth.jpg", radius: 1.00, distance: 13.3, orbitSpeed: 0.018, rotationSpeed: 0.014, tilt: 23.4 },
+        { name: "Mars", texture: "Mars.jpg", radius: 0.75, distance: 16.4, orbitSpeed: 0.015, rotationSpeed: 0.013, tilt: 25.0 },
+        { name: "Jupiter", texture: "Jupiter.jpg", radius: 2.25, distance: 22.5, orbitSpeed: 0.010, rotationSpeed: 0.020, tilt: 3.1 },
+        { name: "Saturn", texture: "Saturn.jpg", radius: 1.95, distance: 30.0, orbitSpeed: 0.0075, rotationSpeed: 0.018, tilt: 26.7 },
+        { name: "Uranus", texture: "Uranus.jpg", radius: 1.50, distance: 36.5, orbitSpeed: 0.0060, rotationSpeed: 0.016, tilt: 97.8 },
+        { name: "Neptune", texture: "Neptune.jpg", radius: 1.45, distance: 42.5, orbitSpeed: 0.0048, rotationSpeed: 0.015, tilt: 28.3 }
+      ];
+
+      const planets = [];
+      for (const d of defs) planets.push(await makePlanet(d));
+
+      const saturnRingGeo = new THREE.RingGeometry(2.4, 3.6, 256);
+      const saturnRingMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, side: THREE.DoubleSide, roughness: 1.0, metalness: 0.0 });
+      const saturnRing = new THREE.Mesh(saturnRingGeo, saturnRingMat);
+      saturnRing.rotation.x = Math.PI / 2;
+      saturnRing.rotation.z = THREE.MathUtils.degToRad(26.7);
+      planets.find(p => p.name === "Saturn").mesh.add(saturnRing);
+
+      function resize() {
+        renderer.setSize(innerWidth, innerHeight, false);
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+      }
+      addEventListener("resize", resize);
+
+      const clock = new THREE.Clock();
+
+      function animate() {
+        requestAnimationFrame(animate);
+        const t = clock.getElapsedTime();
+        sun.rotation.y += 0.002;
+        for (const p of planets) {
+          p.pivot.rotation.y = t * p.orbitSpeed;
+          p.mesh.rotation.y += p.rotationSpeed;
+        }
+        controls.update();
+        renderer.render(scene, camera);
+      }
+      animate();
+    } catch (e) {
+      showMessage(
+        "Script failed to load.",
+        "This usually means the browser blocked module imports (offline) or blocked textures (file://). Use a local server.",
+        String(e && e.stack ? e.stack : e)
+      );
+    }
+  </script>
+</body>
+</html>
